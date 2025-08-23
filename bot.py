@@ -16,7 +16,10 @@ import image_processor
 from ui_views import (
     create_themed_embed, SetOwnerView, SearchView, SearchResultView, RankingView
 )
-import os
+
+# Renderの24時間稼働対応で追加
+from flask import Flask
+from threading import Thread
 
 
 # --- グローバル変数 (Bot全体で共有するデータ) ---
@@ -78,7 +81,6 @@ async def evaluate(interaction: Interaction, image: discord.Attachment, score_sh
             purpose=None,
             race_route=None,
             memo=None,
-            # ▼▼▼ 不足していた3つの引数を追加！ ▼▼▼
             factor_dictionary=factor_dictionary,
             score_sheets=score_sheets,
             char_name_to_id=char_name_to_id
@@ -186,16 +188,16 @@ async def mybox(interaction: Interaction):
 
         message = await interaction.followup.send("あなたの倉庫を読み込んでおりますので、少々お待ちくださいな...", ephemeral=True)
         view = SearchResultView(
-    gspread_client=client.gspread_client,
-    author=interaction.user,
-    message=message,
-    summary_df=my_factors,
-    conditions={},
-    factor_dictionary=factor_dictionary,
-    character_data=character_data,
-    score_sheets=score_sheets,
-    character_list_sorted=character_list_sorted
-)
+            gspread_client=client.gspread_client,
+            author=interaction.user,
+            message=message,
+            summary_df=my_factors,
+            conditions={},
+            factor_dictionary=factor_dictionary,
+            character_data=character_data,
+            score_sheets=score_sheets,
+            character_list_sorted=character_list_sorted
+        )
         await message.edit(content=f"**{len(my_factors)}件**の因子が見つかりましたわ。", embed=view.create_embed(), view=view)
     except Exception as e:
         print(f"マイ倉庫の表示中にエラーが発生: {e}"); traceback.print_exc()
@@ -351,7 +353,6 @@ class FactorBotClient(discord.Client):
     async def delete_factor_by_id(self, gspread_client, individual_id: str, user_id: int, is_admin: bool):
         """UIからの呼び出しを受け、データベースの削除関数を実行する"""
         try:
-            # database.pyに追加した関数を呼び出す
             return database.delete_factor_by_id(gspread_client, individual_id, user_id, is_admin)
         except Exception as e:
             print(f"delete_factor_by_idの呼び出し中にエラー: {e}")
@@ -378,15 +379,12 @@ class FactorBotClient(discord.Client):
         try:
             print("Google SpreadSheetに接続しにいくで...");
             
-            import json
-            gspread_credentials_json = os.environ.get('GSPREAD_CREDENTIALS')
+            # config.py から gspread クライアントを取得
+            self.gspread_client = config.gc
 
-            if not gspread_credentials_json:
-                print("エラーや: Google認証情報が環境変数に設定されとらへんわ。")
-                return
-
-            gspread_credentials = json.loads(gspread_credentials_json)
-            self.gspread_client = gspread.service_account_from_dict(gspread_credentials)
+            if not self.gspread_client:
+                 print("エラーや: config.pyでのGoogle認証に失敗したみたいや。")
+                 return # gspread_clientがなければ、ここで処理を中断
 
             print("データベースの読み込み、始めるで..."); 
             
@@ -398,8 +396,6 @@ class FactorBotClient(discord.Client):
         except Exception as e:
             print(f"起動んときにヤバいエラーが出てもうた: {e}\n主要機能は動かへんかもしれんわ。"); 
             traceback.print_exc()
-
-
 
 async def check_rank_in(interaction: discord.Interaction, gspread_client, individual_id: str, author: discord.User, score_sheets: dict, character_data: dict):
     try:
@@ -432,7 +428,6 @@ async def check_rank_in(interaction: discord.Interaction, gspread_client, indivi
 
             summary_df[score_col] = pd.to_numeric(summary_df[score_col], errors='coerce').fillna(0)
             
-            # サーバー内メンバーのIDリストを取得
             server_ids = {str(m.id) for m in interaction.guild.members}
             server_summary = summary_df[summary_df['所有者ID'].isin(server_ids)]
 
@@ -441,15 +436,13 @@ async def check_rank_in(interaction: discord.Interaction, gspread_client, indivi
             if not my_other_scores.empty:
                 my_current_best = my_other_scores.max()
             
-            # ランキングは、各ユーザーの最高得点の因子のみを対象にする
             ranking_df = server_summary.sort_values(score_col, ascending=False).drop_duplicates(subset=['所有者ID'], keep='first')
             
             all_scores_sorted = sorted(ranking_df[score_col].tolist(), reverse=True)
             
-            # 新スコアが既存のランキングに含まれているか
             if new_score in all_scores_sorted:
                 my_rank = all_scores_sorted.index(new_score) + 1
-            else: # 含まれていない場合、暫定のランキングを作成
+            else:
                 temp_ranking = sorted(all_scores_sorted + [new_score], reverse=True)
                 my_rank = temp_ranking.index(new_score) + 1
 
@@ -478,20 +471,39 @@ async def check_rank_in(interaction: discord.Interaction, gspread_client, indivi
                 else:
                     print(f"エラーや: ランキング通知チャンネル(ID: {config.RANKING_NOTIFICATION_CHANNEL_ID})が見つからへんわ。")
             else:
-                # フォローアップは一時的なメッセージなので、チャンネルがない場合は元のチャンネルに投稿する
                 await interaction.channel.send(embed=embed)
 
     except Exception as e:
         print(f"ランキング通知のチェック中にエラー: {e}")
         traceback.print_exc()
 
+# ----------------------------------------------------------------
+# ▼▼▼ Renderの24時間稼働対応コード ▼▼▼
+# ----------------------------------------------------------------
+app = Flask('')
 
+@app.route('/')
+def health_check():
+    return "I'm alive!"
+
+def run_web_server():
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# ----------------------------------------------------------------
+# ▼▼▼ BotとWebサーバーを起動する最終コード ▼▼▼
+# ----------------------------------------------------------------
 if __name__ == "__main__":
-    TOKEN = os.environ.get('DISCORD_BOT_TOKEN') # Renderからトークンを読み込む
+    # Webサーバーをバックグラウンド(別のスレッド)で起動
+    web_thread = Thread(target=run_web_server)
+    web_thread.start()
+    
+    # メインの処理としてBotを起動
+    TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
     if not TOKEN:
         print("エラーや: Discordボットのトークンが環境変数に設定されとらへんわ。")
     else:
         intents = discord.Intents.default()
         intents.members = True
         client = FactorBotClient(intents=intents)
-        client.run(TOKEN) # 読み込んだTOKENで起動
+        client.run(TOKEN)
