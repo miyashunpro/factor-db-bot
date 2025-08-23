@@ -1,0 +1,7 @@
+discord.py
+pandas
+gspread
+oauth2client
+opencv-python-headless
+google-cloud-vision
+thefuzz
