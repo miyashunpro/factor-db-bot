@@ -1,5 +1,3 @@
-# DB開発中.py (メインファイル)
-
 import discord
 from discord import ui, Interaction, Embed, Color, ButtonStyle, TextStyle, app_commands
 import pandas as pd
@@ -7,9 +5,8 @@ import traceback
 from collections import defaultdict
 import gspread
 import os
-import cv2 # debug_evaluateで必要
+import cv2
 
-# 自作ファイルをimport
 import config
 import database
 import image_processor
@@ -17,12 +14,9 @@ from ui_views import (
     create_themed_embed, SetOwnerView, SearchView, SearchResultView, RankingView
 )
 
-# Renderの24時間稼働対応で追加
 from flask import Flask
 from threading import Thread
 
-
-# --- グローバル変数 (Bot全体で共有するデータ) ---
 factor_dictionary = {}
 factor_name_to_id = {}
 score_sheets = {}
@@ -30,13 +24,11 @@ character_data = {}
 char_name_to_id = {}
 character_list_sorted = []
 
-# --- ヘルパー関数 ---
 async def score_sheet_autocompleter(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     sheet_names = list(score_sheets.keys())
     filtered_choices = [name for name in sheet_names if current.lower() in name.lower()]
     return [app_commands.Choice(name=name, value=name) for name in filtered_choices[:25]]
 
-# --- スラッシュコマンド定義 ---
 @app_commands.command(name="因子登録", description="因子をデータベースに登録いたしますわ。")
 @app_commands.describe(image="登録遊ばせたい因子の画像ですわ", score_sheet_name="使用するスコアシートの名前ですの。指定がない場合はデータベースへの登録のみ行いますわ。")
 @app_commands.autocomplete(score_sheet_name=score_sheet_autocompleter)
@@ -351,7 +343,6 @@ class FactorBotClient(discord.Client):
             return False 
 
     async def delete_factor_by_id(self, gspread_client, individual_id: str, user_id: int, is_admin: bool):
-        """UIからの呼び出しを受け、データベースの削除関数を実行する"""
         try:
             return database.delete_factor_by_id(gspread_client, individual_id, user_id, is_admin)
         except Exception as e:
@@ -360,17 +351,8 @@ class FactorBotClient(discord.Client):
             return False, "削除処理の呼び出し中に予期せぬエラーが発生しました。"           
 
     async def setup_hook(self):
-        self.tree.add_command(evaluate)
-        self.tree.add_command(debug_evaluate)
-        self.tree.add_command(search_factors_command)
-        self.tree.add_command(mybox)
-        self.tree.add_command(recalculate)
-        self.tree.add_command(ranking)
-        self.tree.add_command(whoami)
-        self.tree.add_command(setowner)
-        
-        await self.tree.sync()
-        print(f"全 {len(self.tree.get_commands())} 個のコマンドを同期しといたで。")
+        # on_readyが完了するまでコマンドを登録しないように、syncをここから移動します
+        pass
 
     async def on_ready(self):
         global factor_dictionary, factor_name_to_id, score_sheets, character_data, char_name_to_id, character_list_sorted
@@ -379,19 +361,21 @@ class FactorBotClient(discord.Client):
         try:
             print("Google SpreadSheetに接続しにいくで...");
             
-            # config.py から gspread クライアントを取得
             self.gspread_client = config.gc
 
             if not self.gspread_client:
                  print("エラーや: config.pyでのGoogle認証に失敗したみたいや。")
-                 return # gspread_clientがなければ、ここで処理を中断
+                 return
 
             print("データベースの読み込み、始めるで..."); 
             
             factor_dictionary, factor_name_to_id, character_data, char_name_to_id, character_list_sorted = database.load_factor_dictionaries(self.gspread_client)
             score_sheets = database.load_score_sheets_by_id(self.gspread_client, factor_name_to_id)
 
-            print("データベースの読み込み完了や。いつでもいけるで。")
+            print("データベースの読み込み完了や。")
+            
+            await self.tree.sync()
+            print(f"全 {len(self.tree.get_commands())} 個のコマンドを同期し、準備完了や！")
         
         except Exception as e:
             print(f"起動んときにヤバいエラーが出てもうた: {e}\n主要機能は動かへんかもしれんわ。"); 
@@ -477,9 +461,6 @@ async def check_rank_in(interaction: discord.Interaction, gspread_client, indivi
         print(f"ランキング通知のチェック中にエラー: {e}")
         traceback.print_exc()
 
-# ----------------------------------------------------------------
-# ▼▼▼ Renderの24時間稼働対応コード ▼▼▼
-# ----------------------------------------------------------------
 app = Flask('')
 
 @app.route('/')
@@ -490,15 +471,10 @@ def run_web_server():
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
-# ----------------------------------------------------------------
-# ▼▼▼ BotとWebサーバーを起動する最終コード ▼▼▼
-# ----------------------------------------------------------------
 if __name__ == "__main__":
-    # Webサーバーをバックグラウンド(別のスレッド)で起動
     web_thread = Thread(target=run_web_server)
     web_thread.start()
     
-    # メインの処理としてBotを起動
     TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
     if not TOKEN:
         print("エラーや: Discordボットのトークンが環境変数に設定されとらへんわ。")
