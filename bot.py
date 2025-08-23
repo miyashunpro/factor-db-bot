@@ -17,6 +17,7 @@ from ui_views import (
 from flask import Flask
 from threading import Thread
 
+# --- グローバル変数 ---
 factor_dictionary = {}
 factor_name_to_id = {}
 score_sheets = {}
@@ -24,11 +25,13 @@ character_data = {}
 char_name_to_id = {}
 character_list_sorted = []
 
+# --- ヘルパー関数 ---
 async def score_sheet_autocompleter(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     sheet_names = list(score_sheets.keys())
     filtered_choices = [name for name in sheet_names if current.lower() in name.lower()]
     return [app_commands.Choice(name=name, value=name) for name in filtered_choices[:25]]
 
+# --- スラッシュコマンド定義 ---
 @app_commands.command(name="因子登録", description="因子をデータベースに登録いたしますわ。")
 @app_commands.describe(image="登録遊ばせたい因子の画像ですわ", score_sheet_name="使用するスコアシートの名前ですの。指定がない場合はデータベースへの登録のみ行いますわ。")
 @app_commands.autocomplete(score_sheet_name=score_sheet_autocompleter)
