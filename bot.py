@@ -352,10 +352,24 @@ class FactorBotClient(discord.Client):
             print(f"delete_factor_by_idの呼び出し中にエラー: {e}")
             traceback.print_exc()
             return False, "削除処理の呼び出し中に予期せぬエラーが発生しました。"           
-
+    
     async def setup_hook(self):
-        # on_readyが完了するまでコマンドを登録しないように、syncをここから移動します
-        pass
+        # この中に、定義した全てのコマンドを追加していきます
+        self.tree.add_command(evaluate)
+        self.tree.add_command(debug_evaluate)
+        self.tree.add_command(search_factors_command)
+        self.tree.add_command(mybox)
+        self.tree.add_command(recalculate)
+        self.tree.add_command(ranking)
+        self.tree.add_command(whoami)
+        self.tree.add_command(setowner)
+        
+        # サーバー限定で即時反映させたい場合は、以下の2行のコメントを外してサーバーIDを設定します
+        # YOUR_SERVER_ID = 123456789012345678 # あなたのサーバーID
+        # await self.tree.sync(guild=discord.Object(id=YOUR_SERVER_ID))
+        
+        # グローバル（全てのサーバー）に反映させる場合はこちらを使います
+        await self.tree.sync()
 
     async def on_ready(self):
         global factor_dictionary, factor_name_to_id, score_sheets, character_data, char_name_to_id, character_list_sorted
@@ -375,9 +389,7 @@ class FactorBotClient(discord.Client):
             factor_dictionary, factor_name_to_id, character_data, char_name_to_id, character_list_sorted = database.load_factor_dictionaries(self.gspread_client)
             score_sheets = database.load_score_sheets_by_id(self.gspread_client, factor_name_to_id)
 
-            print("データベースの読み込み完了や。")
-            
-            await self.tree.sync()
+            print("データベースの読み込み完了や。いつでもいけるで。")
             print(f"全 {len(self.tree.get_commands())} 個のコマンドを同期し、準備完了や！")
         
         except Exception as e:
