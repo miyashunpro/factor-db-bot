@@ -792,6 +792,10 @@ class SearchView(ui.View):
                 return await self.message.edit(content="あらあら、データベースにまだ因子が登録されていないようですわ。", view=None, embed=None)
             summary_df['個体ID'] = summary_df['個体ID'].astype(str)
             factors_df['個体ID'] = factors_df['個体ID'].astype(str)
+            if self.search_only_mine:
+                summary_df = summary_df[summary_df['所有者ID'] == str(self.author.id)]
+                if summary_df.empty:
+                    return await self.message.edit(content="あらあら、あなたの所有する因子が見つかりませんでしたわ。", view=None, embed=None)
             
             non_red_conditions = {k: v for k, v in self.conditions.items() if not k.startswith('red_factor')}
             valid_ids = set(summary_df['個体ID'])
