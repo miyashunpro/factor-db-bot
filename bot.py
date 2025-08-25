@@ -10,9 +10,12 @@ import cv2
 import config
 import database
 import image_processor
-from ui_views import (
-    create_themed_embed, SetOwnerView, SearchView, SearchResultView, RankingView
-)
+
+from views.ranking_view import RankingView
+from views.register_view import SetOwnerView, DetailsEditView
+from views.ui_helpers import create_themed_embed
+from views.search.main_view import SearchView
+from views.search.results_view import SearchResultView 
 
 from flask import Flask
 from threading import Thread
@@ -146,10 +149,14 @@ async def debug_evaluate(interaction: Interaction, image: discord.Attachment, le
 async def search_factors_command(interaction: Interaction):
     client: FactorBotClient = interaction.client
     try:
+        # ★★★ 何よりも先に、まず返事をする！ ★★★
+        await interaction.response.defer(ephemeral=True) 
+
+        # その後に、他の処理を続ける
         if not client.gspread_client: 
-            return await interaction.response.send_message("データベースが読み込まれておりませんので、検索できませんでしたわ。", ephemeral=True)
+            # deferの後なので、send_messageではなくfollowup.sendを使う
+            return await interaction.followup.send("データベースが読み込まれておりませんので、検索できませんでしたわ。", ephemeral=True)
         
-        await interaction.response.defer(ephemeral=True)
         message = await interaction.followup.send("検索画面を準備しておりますので、少々お待ちくださいな♪")
         
         view = SearchView(
