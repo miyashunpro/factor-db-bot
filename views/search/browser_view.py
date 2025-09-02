@@ -275,4 +275,4 @@ class ItemBrowserView(ui.View):
         self.cart.clear()
         await interaction.response.edit_message(embed=self.parent_view.create_embed(), view=self.parent_view)
 
-from .modals import FilterModal        
+from .modals import FilterModal, OptionalSkillCountModal       

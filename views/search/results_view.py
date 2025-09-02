@@ -202,6 +202,7 @@ class SearchResultView(ui.View):
         await interaction.response.edit_message(embed=embed, view=confirm_view)
 
     async def back_to_builder(self, interaction: discord.Interaction):
+        from .main_view import SearchView
         await interaction.response.defer()
         builder_view = SearchView(self.gspread_client, self.author, self.message, self.factor_dictionary, self.character_data, self.score_sheets, self.character_list_sorted, self.conditions)
         await interaction.edit_original_response(content=None, embed=builder_view.create_embed(), view=builder_view)        
