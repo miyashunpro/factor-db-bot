@@ -16,6 +16,7 @@ from views.register_view import SetOwnerView, DetailsEditView
 from views.ui_helpers import create_themed_embed
 from views.search.main_view import SearchView
 from views.search.results_view import SearchResultView 
+from views.ranking_builder_view import RankingBuilderView
 
 from flask import Flask
 from threading import Thread
@@ -217,39 +218,27 @@ async def recalculate(interaction: Interaction):
         print(f"スコア再計算中にエラーが発生: {e}"); traceback.print_exc()
         await interaction.followup.send(f"エラーが発生いたしましたわ。\n`{e}`", ephemeral=True)
 
-@app_commands.command(name="ranking", description="指定された採点簿の、サーバー内ハイスコアランキングを表示いたしますわ。")
-@app_commands.describe(score_sheet_name="ランキングをご覧になりたいスコアシートの名前ですの")
-@app_commands.autocomplete(score_sheet_name=score_sheet_autocompleter)
-async def ranking(interaction: Interaction, score_sheet_name: str):
-    await interaction.response.defer(ephemeral=True)
+@app_commands.command(name="ranking", description="サーバー内の因子ランキングを表示いたしますわ。")
+async def ranking(interaction: Interaction):
     client: FactorBotClient = interaction.client
     try:
+        await interaction.response.defer(ephemeral=True, thinking=True)
         summary_df, _ = database.get_full_database(client.gspread_client)
-        score_col = f"合計({score_sheet_name})"
-        if summary_df.empty or score_col not in summary_df.columns:
-            return await interaction.followup.send(f"`{score_sheet_name}`のランキングデータは、まだ存在しないようですわ。", ephemeral=True)
+        all_usages = []
+        if '用途' in summary_df.columns:
+            all_usages = summary_df['用途'].dropna().unique().tolist()
+            all_usages = [usage for usage in all_usages if usage]
+        all_score_sheets = list(score_sheets.keys())
+        if not all_score_sheets:
+            return await interaction.followup.send("エラー：採点簿が一つも登録されていませんわ。")
 
-        server_ids = {str(m.id) for m in interaction.guild.members}
-        
-        if '所有者ID' in summary_df.columns:
-            summary_df['所有者ID'] = summary_df['所有者ID'].astype(str).str.strip()
-            ranking_df = summary_df[summary_df['所有者ID'].isin(server_ids)].copy()
-        else:
-            ranking_df = pd.DataFrame() 
+        # ✨ 最初に呼び出すときは、何も選択されていない状態でViewを作る
+        view = RankingBuilderView(client, interaction.user, all_usages, all_score_sheets, factor_dictionary)
+        await interaction.followup.send("下のメニューから、ランキングの条件を指定してくださいまし♪", view=view)
 
-        if ranking_df.empty: return await interaction.followup.send(f"`{score_sheet_name}`のランキングデータは、まだ存在しないようですわ。", ephemeral=True)
-
-        ranking_df[score_col] = pd.to_numeric(ranking_df[score_col], errors='coerce')
-        ranking_df.dropna(subset=[score_col], inplace=True)
-        ranking_df = ranking_df.sort_values(by=score_col, ascending=False).drop_duplicates(subset=['所有者ID'], keep='first')
-        
-        if ranking_df.empty: return await interaction.followup.send(f"`{score_sheet_name}`のランキングデータは、まだ存在しないようですわ。", ephemeral=True)
-
-        view = RankingView(interaction.user, ranking_df.head(10), score_sheet_name, factor_dictionary)
-        await interaction.followup.send(embed=view.create_embed(), view=view, ephemeral=True)
     except Exception as e:
-        print(f"ランキング表示エラー: {e}"); traceback.print_exc()
-        await interaction.followup.send(f"エラーですわ: {e}", ephemeral=True)
+        await interaction.followup.send(f"ランキング機能の準備中にエラーが発生しました: {e}", ephemeral=True)
+        traceback.print_exc()
 
 @app_commands.command(name="whoami", description="【デバッグ用】あなたご自身のDiscord情報を表示いたしますわ。")
 async def whoami(interaction: Interaction):
